@@ -1,0 +1,299 @@
+<!-- Copyright (c) 2022 Matthew Vine. -->
+<body style="background-color: #aaa">
+  <div
+    style="
+      width: fit-content;
+      margin-left: auto;
+      margin-right: auto;
+      padding: 20px 0px;
+    "
+  >
+    <label for="cars">Circle Color</label>
+    <select name="color" id="color">
+      <option value="partial">Smart</option>
+      <option value="black">Always Black</option>
+      <option value="white">Always White</option>
+    </select>
+    <br /><br />
+    <label for="size">Size</label>
+    <input type="number" id="size" value="15" />
+    <br /><br />
+    <label for="lineSize">Line Size</label>
+    <input type="number" id="lineSize" value="3" />
+    <br /><br />
+    <label for="labels">Show color labels</label>
+    <input type="checkbox" id="labels" />
+    <br /><br />
+    <input type="file" id="file-input" accept=".xlsx" />
+    <br /><br />
+    <button onclick="exportImages()">Export Images</button>
+  </div>
+  <div
+    style="
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0px 100px;
+    "
+  >
+    <canvas id="canvas" width="360" height="100"></canvas>
+    <canvas id="canvas2" width="400" height="400"></canvas>
+  </div>
+  <ul
+    id="list"
+    style="
+      list-style-type: none;
+      width: fit-content;
+      margin-left: auto;
+      margin-right: auto;
+    "
+  ></ul>
+  <br />
+
+  <image id="image" />
+
+  <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+    const MULTIPLIER = 3;
+    let SIZE = 15;
+    let LINE_SIZE = 3;
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const canvas2 = document.getElementById("canvas2");
+    const ctx2 = canvas2.getContext("2d");
+    canvas.width *= MULTIPLIER;
+    canvas.height *= MULTIPLIER;
+
+    function drawColorSpectrum() {
+      for (let i = 0; i < 360 * MULTIPLIER; i += MULTIPLIER) {
+        for (let j = 0; j < 100 * MULTIPLIER; j += MULTIPLIER) {
+          ctx.fillStyle = `hsl(${i / MULTIPLIER}, 100%, ${
+            100 - j / MULTIPLIER
+          }%)`;
+          ctx.fillRect(i, j, MULTIPLIER, MULTIPLIER);
+        }
+      }
+    }
+
+    function drawColorWheel() {
+      var radius = canvas2.width / 2;
+      var toRad = (2 * Math.PI) / 360;
+      var step = 1 / radius;
+
+      ctx2.clearRect(0, 0, canvas2.width, canvas2.height);
+
+      var cx = (cy = radius);
+      for (var i = 0; i < 360; i += step) {
+        var rad = i * toRad;
+        var x = radius * Math.cos(rad),
+          y = radius * Math.sin(rad);
+
+        ctx2.strokeStyle = "hsl(" + i + ", 100%, 50%)";
+
+        ctx2.beginPath();
+        ctx2.moveTo(radius, radius);
+        ctx2.lineTo(cx + x, cy + y);
+        ctx2.stroke();
+      }
+
+      var grd = ctx2.createRadialGradient(cx, cy, 0, cx, cx, radius);
+      grd.addColorStop(0, "white");
+      grd.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx2.fillStyle = grd;
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, radius, 0, Math.PI * 2, true);
+      ctx2.closePath();
+      ctx2.fill();
+    }
+
+    function rgbToHsv(r, g, b) {
+      (r = r / 255), (g = g / 255), (b = b / 255);
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      let h;
+      let s;
+      let v = max;
+
+      const d = max - min;
+      s = max == 0 ? 0 : d / max;
+
+      if (max == min) {
+        h = 0; // achromatic
+      } else {
+        switch (max) {
+          case r:
+            h = (g - b) / d + (g < b ? 6 : 0);
+            break;
+          case g:
+            h = (b - r) / d + 2;
+            break;
+          case b:
+            h = (r - g) / d + 4;
+            break;
+        }
+        h /= 6;
+      }
+
+      return [h, s, v];
+    }
+
+    function rgbToHsl(r, g, b) {
+      (r = r / 255), (g = g / 255), (b = b / 255);
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      let h;
+      let s;
+      let l = (max + min) / 2;
+
+      if (max == min) {
+        h = s = 0; // achromatic
+      } else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+          case r:
+            h = (g - b) / d + (g < b ? 6 : 0);
+            break;
+          case g:
+            h = (b - r) / d + 2;
+            break;
+          case b:
+            h = (r - g) / d + 4;
+            break;
+        }
+        h /= 6;
+      }
+
+      s = s * 100;
+      s = Math.round(s);
+      l = l * 100;
+      l = Math.round(l);
+      h = Math.round(360 * h);
+
+      return [h, s, l];
+    }
+
+    function plotPoint(canvas, ctx, x, y, R, G, B, black = false, label) {
+      const color =
+        document.getElementById("color").value === "black"
+          ? "rgb(0, 0, 0)"
+          : document.getElementById("color").value === "white"
+          ? "rgb(255, 255, 255)"
+          : canvas.height !== canvas.width && y >= canvas.height * 0.7
+          ? "rgb(255, 255, 255)"
+          : "rgb(0, 0, 0)";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = LINE_SIZE;
+      ctx.beginPath();
+      ctx.arc(x, y, SIZE, 0, Math.PI * 2, true);
+      ctx.closePath();
+      ctx.stroke();
+
+      if (document.getElementById("labels").checked) {
+        ctx.font = "10px Arial";
+        ctx.fillStyle = color;
+        ctx.fillText(
+          label,
+          Math.min(canvas.width - 50, Math.max(0, x - 50)),
+          y - 10
+        );
+      }
+    }
+
+    // TODO: CURRENTLY REVERSED
+    function plotPointOnSpectrum(R, G, B, label) {
+      const [h, s, l] = rgbToHsl(
+        parseInt(R, 16),
+        parseInt(G, 16),
+        parseInt(B, 16)
+      );
+      console.log(canvas.height, h);
+      plotPoint(
+        canvas,
+        ctx,
+        h * MULTIPLIER,
+        canvas.height - l * MULTIPLIER,
+        R,
+        G,
+        B,
+        true,
+        label
+      );
+    }
+
+    function plotPointOnWheel(R, G, B, label) {
+      const [h, s] = rgbToHsv(
+        parseInt(R, 16),
+        parseInt(G, 16),
+        parseInt(B, 16)
+      );
+      const theta = h * 2 * Math.PI;
+      const maxRadius = canvas2.width / 2;
+      const r = s * maxRadius;
+      const x = r * Math.cos(theta) + maxRadius;
+      const y = r * Math.sin(theta) + maxRadius;
+
+      plotPoint(canvas2, ctx2, x, y, R, G, B, false, label);
+    }
+
+    drawColorSpectrum();
+    drawColorWheel();
+
+    const fileInput = document.getElementById("file-input");
+    const list = document.getElementById("list");
+    fileInput.addEventListener("change", () => {
+      SIZE = document.getElementById("size").value;
+      LINE_SIZE = document.getElementById("lineSize").value;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const workbook = XLSX.read(event.target.result, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonSheet = XLSX.utils.sheet_to_json(sheet);
+        console.log(jsonSheet);
+
+        jsonSheet.forEach((entry) => {
+          plotPointOnSpectrum(
+            entry.HEX.substring(1, 3),
+            entry.HEX.substring(3, 5),
+            entry.HEX.substring(5, 7),
+            entry.FCU
+          );
+          plotPointOnWheel(
+            entry.HEX.substring(1, 3),
+            entry.HEX.substring(3, 5),
+            entry.HEX.substring(5, 7),
+            entry.FCU
+          );
+
+          const node = document.createElement("li");
+          node.style.display = "flex";
+          node.style.alignItems = "center";
+
+          const color = document.createElement("div");
+          color.style.width = "10px";
+          color.style.height = "10px";
+          color.style.margin = "10px";
+          color.style.backgroundColor = entry.HEX;
+          node.appendChild(color);
+
+          node.appendChild(document.createTextNode(entry.FCU));
+          list.appendChild(node);
+        });
+      };
+      reader.readAsArrayBuffer(fileInput.files[0]);
+    });
+
+    function exportImages() {
+      var link = document.createElement("a");
+      link.download = "canvas-rectangle.png";
+      link.href = canvas.toDataURL();
+      link.click();
+
+      link.download = "canvas-circle.png";
+      link.href = canvas2.toDataURL();
+      link.click();
+    }
+  </script>
+</body>
